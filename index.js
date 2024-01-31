@@ -86,7 +86,13 @@ app.post('/chats', async (req, res) => {
 
 io.on('connection', async (socket) => {
 	socket.on('chat message', (msg) => {
-		console.info('message ', msg);
-		io.emit('chat message', msg);
+    const { chatId, message } = msg;
+    if (chatId && message) {
+      socket.join(chatId);
+
+      console.info('data ', chatId, message);
+
+      io.to(chatId).emit('chat message', { chatId, message });
+    }
 	});
 });
