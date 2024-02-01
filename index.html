@@ -20,6 +20,7 @@
     <ul id="messages"></ul>
     <form id="form" action="">
       <input id="chatId" placeholder="Chat ID" autocomplete="off" style="margin-right: 5px;"/>
+      <input id="userId" placeholder="User ID" autocomplete="off" style="margin-right: 5px;"/>
       <input id="input" autocomplete="off" /><button>Send</button>
     </form>
     <script src="/socket.io/socket.io.js"></script>
@@ -29,21 +30,24 @@
       const form = document.getElementById('form');
       const input = document.getElementById('input');
       const chatId = document.getElementById('chatId');
+      const userId = document.getElementById('userId');
       const messages = document.getElementById('messages');
 
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        if (input.value && chatId.value) {
-          const messageData = { chatId: chatId.value, message: input.value };
+        if (input.value && chatId.value && userId.value) {
+          const messageData = { chatId: chatId.value, message: input.value, userId: userId.value };
           socket.emit('chat message', messageData);
           input.value = '';
         }
       });
 
       socket.on('chat message', (msg) => {
+        console.info('chat message ', msg);
+        // Make sure that on client side, you implement the correct logic to listen the correct channel.
         if (chatId.value === msg.chatId) {
           const item = document.createElement('li');
-          item.textContent = `Chat (${msg.chatId}): ${msg.message}`;
+          item.textContent = `${msg.userId}: ${msg.message}`;
           messages.appendChild(item);
           window.scrollTo(0, document.body.scrollHeight);
         }

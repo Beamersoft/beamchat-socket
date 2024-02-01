@@ -86,13 +86,23 @@ app.post('/chats', async (req, res) => {
 
 io.on('connection', async (socket) => {
 	socket.on('chat message', (msg) => {
-    const { chatId, message } = msg;
+    const { chatId, message, userId } = msg;
     if (chatId && message) {
       socket.join(chatId);
+      io.to(chatId).emit('chat message', { chatId, message, userId });
 
-      console.info('data ', chatId, message);
+      const messageToInsert = {
+        messageId: uuidv4(),
+        senderId: userId,
+        status: 'sent',
+        createdAt: new Date(),
+        text: message,
+      }
 
-      io.to(chatId).emit('chat message', { chatId, message });
+      chatsCollection.updateOne(
+        { chatId: chatId },
+        { $push: { messages: messageToInsert } }
+      )
     }
 	});
 });
