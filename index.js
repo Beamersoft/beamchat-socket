@@ -8,6 +8,8 @@ import cors from 'cors';
 import { MongoClient, ObjectId } from 'mongodb';
 import { Server } from 'socket.io';
 import { join } from 'node:path';
+import boot from './src/boot/index.js';
+import authenticateToken from './src/middlewares/auth.js';
 
 const {
 	MONGODB_URL,
@@ -15,7 +17,7 @@ const {
 	PORT,
 	COLLECTION_CHATS,
 	COLLECTION_USERS,
-  COLLECTION_MESSAGES
+	COLLECTION_MESSAGES,
 } = process.env;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -40,14 +42,15 @@ const chatsCollection = db.collection(COLLECTION_CHATS);
 const usersCollection = db.collection(COLLECTION_USERS);
 const messagesCollection = db.collection(COLLECTION_MESSAGES);
 
+boot(chatsCollection, messagesCollection);
+
 console.info('Connected successfully to MongoDB');
 
 app.get('/', (req, res) => {
 	res.sendFile(join(__dirname, 'index.html'));
 });
 
-// TODO: Needs authentication
-app.post('/chats', async (req, res) => {
+app.post('/chats', authenticateToken, async (req, res) => {
 	try {
 		const chatId = uuidv4();
 
@@ -85,54 +88,54 @@ app.post('/chats', async (req, res) => {
 	}
 });
 
-app.get('/chats/messages', async (req, res) => {
-  try {
-    const {
-      userId,
-      chatId,
-      skip,
-      limit
-    } = req.query;
+app.get('/messages', authenticateToken, async (req, res) => {
+	try {
+		const {
+			userId,
+			chatId,
+			skip,
+			limit,
+		} = req.query;
 
-    if (!userId || !chatId || !skip || !limit) return res.status(400).send('Cannot return messages, you must provide a userId, a chatId, a limit and a skip');
+		if (!userId || !chatId || !skip || !limit) return res.status(400).send('Cannot return messages, you must provide a userId, a chatId, a limit and a skip');
 
-    const userBelongToChat = await chatsCollection.findOne({ chatId: chatId, participantsId: { $in: [userId]} });
+		const userBelongToChat = await chatsCollection.findOne({ chatId, participantsId: { $in: [userId] } });
 
-    if (!userBelongToChat) return res.status(400).send('User does not belong to chat');
+		if (!userBelongToChat) return res.status(400).send('User does not belong to chat');
 
-    const messages = await messagesCollection.find({ chatId: chatId })
-      .sort({ createdAt: -1 })
-      .skip(Number(skip))
-      .limit(Number(limit))
-      .toArray();
+		const messages = await messagesCollection.find({ chatId })
+			.sort({ createdAt: -1 })
+			.skip(Number(skip))
+			.limit(Number(limit))
+			.toArray();
 
-    if (messages) {
-      return res.json({ messages })
-    }
+		if (messages) {
+			return res.json({ messages });
+		}
 
-    return res.status(400).send('Cannot find a chat');
-  } catch (err) {
-    return res.status(400).send(err.toString());
-  }
-})
+		return res.status(400).send('Cannot find a chat');
+	} catch (err) {
+		return res.status(400).send(err.toString());
+	}
+});
 
 io.on('connection', async (socket) => {
 	socket.on('chat message', (msg) => {
-    const { chatId, message, userId } = msg;
-    if (chatId && message) {
-      socket.join(chatId);
-      io.to(chatId).emit('chat message', { chatId, message, userId });
+		const { chatId, message, userId } = msg;
+		if (chatId && message) {
+			socket.join(chatId);
+			io.to(chatId).emit('chat message', { chatId, message, userId });
 
-      const messageToInsert = {
-        messageId: uuidv4(),
-        chatId: chatId,
-        senderId: userId,
-        status: 'sent',
-        createdAt: new Date(),
-        text: message,
-      }
+			const messageToInsert = {
+				messageId: uuidv4(),
+				chatId,
+				senderId: userId,
+				status: 'sent',
+				createdAt: new Date(),
+				text: message,
+			};
 
-      messagesCollection.insertOne(messageToInsert);
-    }
+			messagesCollection.insertOne(messageToInsert);
+		}
 	});
 });
