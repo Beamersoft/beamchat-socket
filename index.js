@@ -15,6 +15,7 @@ const {
 	PORT,
 	COLLECTION_CHATS,
 	COLLECTION_USERS,
+  COLLECTION_MESSAGES
 } = process.env;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -37,6 +38,7 @@ await client.connect();
 const db = client.db(MONGODB_NAME);
 const chatsCollection = db.collection(COLLECTION_CHATS);
 const usersCollection = db.collection(COLLECTION_USERS);
+const messagesCollection = db.collection(COLLECTION_MESSAGES);
 
 console.info('Connected successfully to MongoDB');
 
@@ -56,12 +58,11 @@ app.post('/chats', async (req, res) => {
 
 		if (!usersIds ||
       (usersIds && !Array.isArray(usersIds)) ||
-      (usersIds && usersIds.length === 0)) throw new Error('No users provided to create a valid chat');
+      (usersIds && usersIds.length === 0)) return res.status(400).send('No users provided to create a valid chat');
 
 		const newChat = {
 			chatId,
 			participantsId: usersIds,
-			messages: [],
 			isPrivate: isPrivate || true,
 			createdAt: new Date(),
 		};
@@ -84,6 +85,37 @@ app.post('/chats', async (req, res) => {
 	}
 });
 
+app.get('/chats/messages', async (req, res) => {
+  try {
+    const {
+      userId,
+      chatId,
+      skip,
+      limit
+    } = req.query;
+
+    if (!userId || !chatId || !skip || !limit) return res.status(400).send('Cannot return messages, you must provide a userId, a chatId, a limit and a skip');
+
+    const userBelongToChat = await chatsCollection.findOne({ chatId: chatId, participantsId: { $in: [userId]} });
+
+    if (!userBelongToChat) return res.status(400).send('User does not belong to chat');
+
+    const messages = await messagesCollection.find({ chatId: chatId })
+      .sort({ createdAt: -1 })
+      .skip(Number(skip))
+      .limit(Number(limit))
+      .toArray();
+
+    if (messages) {
+      return res.json({ messages })
+    }
+
+    return res.status(400).send('Cannot find a chat');
+  } catch (err) {
+    return res.status(400).send(err.toString());
+  }
+})
+
 io.on('connection', async (socket) => {
 	socket.on('chat message', (msg) => {
     const { chatId, message, userId } = msg;
@@ -93,16 +125,14 @@ io.on('connection', async (socket) => {
 
       const messageToInsert = {
         messageId: uuidv4(),
+        chatId: chatId,
         senderId: userId,
         status: 'sent',
         createdAt: new Date(),
         text: message,
       }
 
-      chatsCollection.updateOne(
-        { chatId: chatId },
-        { $push: { messages: messageToInsert } }
-      )
+      messagesCollection.insertOne(messageToInsert);
     }
 	});
 });

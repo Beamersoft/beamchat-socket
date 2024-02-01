@@ -4,6 +4,7 @@ export MONGODB_URL="mongodb://127.0.0.1"
 export MONGODB_NAME="beamchat"
 export COLLECTION_CHATS="chats"
 export COLLECTION_USERS="users"
+export COLLECTION_MESSAGES="messages"
 export HOST="localhost"
 export PORT=3500
 export NAME="beamchat"
