@@ -5,19 +5,19 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient } from 'mongodb';
 import { Server } from 'socket.io';
 import { join } from 'node:path';
 import boot from './src/boot/index.js';
-import authenticateToken from './src/middlewares/auth.js';
+import { authenticateToken, getUserDataFromToken } from './src/middlewares/auth.js';
 
 const {
 	MONGODB_URL,
 	MONGODB_NAME,
 	PORT,
 	COLLECTION_CHATS,
-	COLLECTION_USERS,
 	COLLECTION_MESSAGES,
+	COLLECTION_USERS,
 } = process.env;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -39,8 +39,8 @@ server.listen(PORT, () => {
 await client.connect();
 const db = client.db(MONGODB_NAME);
 const chatsCollection = db.collection(COLLECTION_CHATS);
-const usersCollection = db.collection(COLLECTION_USERS);
 const messagesCollection = db.collection(COLLECTION_MESSAGES);
+const usersCollection = db.collection(COLLECTION_USERS);
 
 boot(chatsCollection, messagesCollection);
 
@@ -48,6 +48,25 @@ console.info('Connected successfully to MongoDB');
 
 app.get('/', (req, res) => {
 	res.sendFile(join(__dirname, 'index.html'));
+});
+
+app.get('/chats', authenticateToken, async (req, res) => {
+	try {
+		const userJwt = getUserDataFromToken(req);
+
+		if (!userJwt) return res.status(400).send('No userjwt data supplied');
+		if (!userJwt.email) return res.status(400).send('No userjwt email supplied');
+
+		const user = await usersCollection.findOne({ email: userJwt.email });
+
+		if (!user) return res.status(400).send('No user data supplied');
+
+		const chats = await chatsCollection.find({ participantsId: { $in: [String(user._id)] } }).toArray();
+
+		return res.json({ chats });
+	} catch (err) {
+		return res.status(400).send(err.toString());
+	}
 });
 
 app.post('/chats', authenticateToken, async (req, res) => {
@@ -72,17 +91,7 @@ app.post('/chats', authenticateToken, async (req, res) => {
 
 		chatsCollection.insertOne(newChat);
 
-		const usersObjectIds = usersIds.map((id) => new ObjectId(id));
-
-		const updated = await usersCollection.updateMany(
-			{ _id: { $in: usersObjectIds } },
-			{ $push: { chats: chatId } },
-		);
-
-		if (updated) {
-			return res.json({ updated, chatId });
-		}
-		return res.status(400).send('Cannot create a chat');
+		return res.json({ chatId });
 	} catch (err) {
 		return res.status(400).send(err.toString());
 	}

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 
-function authenticateToken(req, res, next) {
+export function authenticateToken(req, res, next) {
 	const authHeader = req.headers.authorization;
 	const token = authHeader && authHeader.split(' ')[1];
 
@@ -13,4 +13,11 @@ function authenticateToken(req, res, next) {
 	});
 }
 
-export default authenticateToken;
+export function getUserDataFromToken(req) {
+	const authHeader = req.headers.authorization;
+	const token = authHeader && authHeader.split(' ')[1];
+	if (token == null) return null;
+
+	const data = jwt.verify(token, process.env.BEAMCHAT_SIGN);
+	return data;
+}
