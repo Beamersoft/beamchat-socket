@@ -26,11 +26,16 @@ const __dirname = path.dirname(__filename);
 const client = new MongoClient(MONGODB_URL);
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 app.use(cors());
+
+const io = new Server(server, {
+	cors: {
+		origin: `http://localhost:${PORT}`,
+	},
+});
 
 server.listen(PORT, () => {
 	console.info(`server running at http://localhost:${PORT}`);
@@ -113,7 +118,7 @@ app.get('/messages', authenticateToken, async (req, res) => {
 		if (!userBelongToChat) return res.status(400).send('User does not belong to chat');
 
 		const messages = await messagesCollection.find({ chatId })
-			.sort({ createdAt: -1 })
+			.sort({ createdAt: 1 })
 			.skip(Number(skip))
 			.limit(Number(limit))
 			.toArray();
@@ -130,6 +135,7 @@ app.get('/messages', authenticateToken, async (req, res) => {
 
 io.on('connection', async (socket) => {
 	socket.on('chat message', (msg) => {
+		console.info('server msg received ', msg);
 		const { chatId, message, userId } = msg;
 		if (chatId && message) {
 			socket.join(chatId);
