@@ -124,7 +124,7 @@ app.get('/messages', authenticateToken, async (req, res) => {
 			.toArray();
 
 		if (messages) {
-			return res.json({ messages: messages.reverse() });
+			return res.json({ messages });
 		}
 
 		return res.status(400).send('Cannot find a chat');
@@ -134,14 +134,14 @@ app.get('/messages', authenticateToken, async (req, res) => {
 });
 
 io.on('connection', async (socket) => {
-	socket.on('join chat', (chatId) => {
+	socket.on('CHAT_JOIN', (chatId) => {
 		socket.join(chatId);
 	});
 
-	socket.on('chat message', (msg) => {
+	socket.on('CHAT_MESSAGE', (msg) => {
 		const { chatId, message, userId } = msg;
 		if (chatId && message) {
-			io.to(chatId).emit('chat message', { chatId, message, userId });
+			io.to(chatId).emit('CHAT_MESSAGE', { chatId, message, userId });
 
 			const messageToInsert = {
 				messageId: uuidv4(),
