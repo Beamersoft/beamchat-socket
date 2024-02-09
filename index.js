@@ -5,11 +5,17 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
-import { MongoClient } from 'mongodb';
+import {
+	MongoClient,
+	ObjectId,
+} from 'mongodb';
 import { Server } from 'socket.io';
 import { join } from 'node:path';
 import boot from './src/boot/index.js';
-import { authenticateToken, getUserDataFromToken } from './src/middlewares/auth.js';
+import {
+	authenticateToken,
+	getUserDataFromToken,
+} from './src/middlewares/auth.js';
 
 const {
 	MONGODB_URL,
@@ -66,9 +72,37 @@ app.get('/chats', authenticateToken, async (req, res) => {
 
 		if (!user) return res.status(400).send('No user data supplied');
 
-		const chats = await chatsCollection.find({ participantsId: { $in: [String(user._id)] } }).toArray();
+		// Fetch chats
+		const chats = await chatsCollection.find({
+			participantsId: user._id.toString(), // Convert ObjectId to string
+		}).toArray();
 
-		return res.json({ chats });
+		// Extract unique participant IDs
+		const participantIds = chats.reduce((acc, chat) => {
+			chat.participantsId.forEach((id) => {
+				if (acc.indexOf(id) === -1) acc.push(id);
+			});
+			return acc;
+		}, []);
+
+		// Convert participant IDs to ObjectId
+		const participantObjectId = participantIds.map((id) => new ObjectId(id));
+
+		// Fetch user details for all participants
+		const userDetails = await usersCollection.find({
+			_id: { $in: participantObjectId },
+		}, {
+			projection: { firstName: 1, lastName: 1 },
+		}).toArray();
+
+		const users = {};
+
+		// eslint-disable-next-line no-restricted-syntax
+		for (const u of userDetails) {
+			if (user._id.toString() !== u._id.toString()) users[u._id] = u;
+		}
+
+		return res.json({ chats, users });
 	} catch (err) {
 		return res.status(400).send(err.toString());
 	}
