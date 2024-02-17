@@ -74,13 +74,13 @@ app.get('/chats', authenticateToken, async (req, res) => {
 
 		// Fetch chats
 		const chats = await chatsCollection.find({
-			participantsId: user._id.toString(), // Convert ObjectId to string
+			participants: { $elemMatch: { id: user._id } }, // Convert ObjectId to string
 		}).toArray();
 
 		// Extract unique participant IDs
 		const participantIds = chats.reduce((acc, chat) => {
-			chat.participantsId.forEach((id) => {
-				if (acc.indexOf(id) === -1) acc.push(id);
+			chat.participants.forEach((participant) => {
+				if (acc.indexOf(participant.id) === -1) acc.push(participant.id.toString());
 			});
 			return acc;
 		}, []);
@@ -108,22 +108,29 @@ app.get('/chats', authenticateToken, async (req, res) => {
 	}
 });
 
-app.post('/chats', authenticateToken, async (req, res) => {
+app.post('/chat', authenticateToken, async (req, res) => {
 	try {
-		const chatId = uuidv4();
+		const userJwt = getUserDataFromToken(req);
 
 		const {
-			usersIds,
 			isPrivate,
+			pubKey,
 		} = req.body;
 
-		if (!usersIds ||
-      (usersIds && !Array.isArray(usersIds)) ||
-      (usersIds && usersIds.length === 0)) return res.status(400).send('No users provided to create a valid chat');
+		if (!pubKey) return res.status(400).send('No pubKey provided to join a valid chat');
+
+		const user = await usersCollection.findOne({ email: userJwt.email });
+
+		if (!user) return res.status(400).send('User not found');
+
+		const chatId = uuidv4();
 
 		const newChat = {
 			chatId,
-			participantsId: usersIds,
+			participants: [{
+				id: user._id,
+				pubKey,
+			}],
 			isPrivate: isPrivate || true,
 			createdAt: new Date(),
 		};
@@ -131,6 +138,45 @@ app.post('/chats', authenticateToken, async (req, res) => {
 		chatsCollection.insertOne(newChat);
 
 		return res.json({ chatId });
+	} catch (err) {
+		return res.status(400).send(err.toString());
+	}
+});
+
+app.post('/chat/join', authenticateToken, async (req, res) => {
+	try {
+		const userJwt = getUserDataFromToken(req);
+
+		const {
+			chatId,
+			pubKey,
+		} = req.body;
+
+		if (!userJwt) return res.status(400).send('No userjwt data supplied');
+		if (!userJwt.email) return res.status(400).send('No userjwt email supplied');
+		if (!chatId) return res.status(400).send('No chatId provided to join a valid chat');
+		if (!pubKey) return res.status(400).send('No pubKey provided to join a valid chat');
+
+		const user = await usersCollection.findOne({ email: userJwt.email });
+
+		if (!user) return res.status(400).send('User not found');
+
+		const chat = await chatsCollection.findOne({ chatId });
+
+		if (!chat) return res.status(400).send('Chat not found');
+
+		await chatsCollection.updateOne({
+			chatId,
+		}, {
+			$push: {
+				participants: {
+					id: user._id,
+					pubKey,
+				},
+			},
+		});
+
+		return res.json(true);
 	} catch (err) {
 		return res.status(400).send(err.toString());
 	}
@@ -173,9 +219,20 @@ io.on('connection', async (socket) => {
 	});
 
 	socket.on('CHAT_MESSAGE', (msg) => {
-		const { chatId, message, userId } = msg;
+		const {
+			chatId,
+			message,
+			iv,
+			userId,
+		} = msg;
+
 		if (chatId && message) {
-			io.to(chatId).emit('CHAT_MESSAGE', { chatId, message, userId });
+			io.to(chatId).emit('CHAT_MESSAGE', {
+				chatId,
+				message,
+				iv,
+				userId,
+			});
 
 			const messageToInsert = {
 				messageId: uuidv4(),
@@ -184,6 +241,7 @@ io.on('connection', async (socket) => {
 				status: 'sent',
 				createdAt: new Date(),
 				text: message,
+				iv,
 			};
 
 			messagesCollection.insertOne(messageToInsert);
