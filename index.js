@@ -24,6 +24,7 @@ const {
 	COLLECTION_CHATS,
 	COLLECTION_MESSAGES,
 	COLLECTION_USERS,
+	COLLECTION_NOTIFICATIONS,
 } = process.env;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,8 +53,13 @@ const db = client.db(MONGODB_NAME);
 const chatsCollection = db.collection(COLLECTION_CHATS);
 const messagesCollection = db.collection(COLLECTION_MESSAGES);
 const usersCollection = db.collection(COLLECTION_USERS);
+const notificationsCollection = db.collection(COLLECTION_NOTIFICATIONS);
 
-boot(chatsCollection, messagesCollection);
+boot(
+	chatsCollection,
+	messagesCollection,
+	notificationsCollection,
+);
 
 console.info('Connected successfully to MongoDB');
 
@@ -61,7 +67,7 @@ app.get('/', (req, res) => {
 	res.sendFile(join(__dirname, 'index.html'));
 });
 
-app.get('/chats', authenticateToken, async (req, res) => {
+app.get('/chat/all', authenticateToken, async (req, res) => {
 	try {
 		const userJwt = getUserDataFromToken(req);
 
@@ -115,13 +121,33 @@ app.post('/chat', authenticateToken, async (req, res) => {
 		const {
 			isPrivate,
 			pubKey,
+			invitedEmail,
 		} = req.body;
 
 		if (!pubKey) return res.status(400).send('No pubKey provided to join a valid chat');
 
+		if (userJwt.email === invitedEmail) return res.status(400).send('Cannot invite yourself to a chat');
+
 		const user = await usersCollection.findOne({ email: userJwt.email });
 
 		if (!user) return res.status(400).send('User not found');
+
+		const invitedUser = await usersCollection.findOne({ email: invitedEmail });
+
+		if (!invitedUser) return res.status(400).send('Invited user not found');
+
+		const newNotification = {
+			senderId: user._id,
+			receiverId: invitedUser._id,
+			status: 'pending',
+			type: 'NOTIFICATION_CHAT_INVITE',
+			sentAt: new Date(),
+			respondedAt: null,
+		};
+
+		notificationsCollection.insertOne(newNotification);
+
+		// TODO: Send push notification to invitedUser
 
 		const chatId = uuidv4();
 
@@ -130,6 +156,9 @@ app.post('/chat', authenticateToken, async (req, res) => {
 			participants: [{
 				id: user._id,
 				pubKey,
+			}, {
+				id: invitedUser._id,
+				pubKey: null,
 			}],
 			isPrivate: isPrivate || true,
 			createdAt: new Date(),
