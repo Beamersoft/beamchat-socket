@@ -78,12 +78,10 @@ app.get('/chat/all', authenticateToken, async (req, res) => {
 
 		if (!user) return res.status(400).send('No user data supplied');
 
-		// Fetch chats
 		const chats = await chatsCollection.find({
 			participants: { $elemMatch: { id: user._id } }, // Convert ObjectId to string
 		}).toArray();
 
-		// Extract unique participant IDs
 		const participantIds = chats.reduce((acc, chat) => {
 			chat.participants.forEach((participant) => {
 				if (acc.indexOf(participant.id) === -1) acc.push(participant.id.toString());
@@ -91,10 +89,8 @@ app.get('/chat/all', authenticateToken, async (req, res) => {
 			return acc;
 		}, []);
 
-		// Convert participant IDs to ObjectId
 		const participantObjectId = participantIds.map((id) => new ObjectId(id));
 
-		// Fetch user details for all participants
 		const userDetails = await usersCollection.find({
 			_id: { $in: participantObjectId },
 		}, {
@@ -237,6 +233,25 @@ app.get('/messages', authenticateToken, async (req, res) => {
 		}
 
 		return res.status(400).send('Cannot find a chat');
+	} catch (err) {
+		return res.status(400).send(err.toString());
+	}
+});
+
+app.get('/notifications', authenticateToken, async (req, res) => {
+	try {
+		const userJwt = getUserDataFromToken(req);
+
+		if (!userJwt) return res.status(400).send('No userjwt data supplied');
+		if (!userJwt.email) return res.status(400).send('No userjwt email supplied');
+
+		const user = await usersCollection.findOne({ email: userJwt.email });
+
+		if (!user) return res.status(400).send('User does not exist');
+
+		const notifications = await notificationsCollection.find({ receiverId: user._id }).toArray();
+
+		return res.json({ notifications });
 	} catch (err) {
 		return res.status(400).send(err.toString());
 	}
