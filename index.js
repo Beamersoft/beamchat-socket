@@ -110,6 +110,59 @@ app.get('/chats/all', authenticateToken, async (req, res) => {
 	}
 });
 
+app.post('/chats/accept', authenticateToken, async (req, res) => {
+	try {
+		const userJwt = getUserDataFromToken(req);
+
+		const {
+			chatId,
+			pubKey,
+		} = req.body;
+
+		if (!chatId) return res.status(400).send('No chatId provided to accept a valid chat');
+
+		if (!pubKey) return res.status(400).send('No pubKey provided to accept a valid chat');
+
+		const user = await usersCollection.findOne({ email: userJwt.email });
+
+		if (!user) return res.status(400).send('User not found');
+
+		const chat = await chatsCollection.findOne({
+			participants: {
+				$elemMatch: {
+					id: user._id,
+				},
+			},
+		});
+
+		if (!chat) return res.status(400).send('Chat not found');
+
+		await chatsCollection.updateOne({
+			chatId,
+			'participants.id': user._id,
+		}, {
+			$set: {
+				'participants.$[elem].pubKey': pubKey,
+			},
+		}, {
+			arrayFilters: [{ 'elem.id': user._id, 'elem.pubKey': null }],
+		});
+
+		await notificationsCollection.updateOne({
+			chatId,
+		}, {
+			$set: {
+				status: 'accepted',
+				answeredAt: new Date(),
+			},
+		});
+
+		return res.json({ chatId });
+	} catch (err) {
+		return res.status(400).send(err.toString());
+	}
+});
+
 app.post('/chats', authenticateToken, async (req, res) => {
 	try {
 		const userJwt = getUserDataFromToken(req);
@@ -132,19 +185,6 @@ app.post('/chats', authenticateToken, async (req, res) => {
 
 		if (!invitedUser) return res.status(400).send('Invited user not found');
 
-		const newNotification = {
-			senderId: user._id,
-			receiverId: invitedUser._id,
-			status: 'pending',
-			type: 'NOTIFICATION_CHAT_INVITE',
-			sentAt: new Date(),
-			respondedAt: null,
-		};
-
-		notificationsCollection.insertOne(newNotification);
-
-		// TODO: Send push notification to invitedUser
-
 		const chatId = uuidv4();
 
 		const newChat = {
@@ -161,6 +201,20 @@ app.post('/chats', authenticateToken, async (req, res) => {
 		};
 
 		chatsCollection.insertOne(newChat);
+
+		const newNotification = {
+			senderId: user._id,
+			receiverId: invitedUser._id,
+			chatId,
+			status: 'pending',
+			type: 'NOTIFICATION_CHAT_INVITE',
+			sentAt: new Date(),
+			answeredAt: null,
+		};
+
+		notificationsCollection.insertOne(newNotification);
+
+		// TODO: Send push notification to invitedUser
 
 		return res.json({ chatId });
 	} catch (err) {
@@ -218,7 +272,9 @@ app.get('/messages', authenticateToken, async (req, res) => {
 
 		if (!userId || !chatId || !skip || !limit) return res.status(400).send('Cannot return messages, you must provide a userId, a chatId, a limit and a skip');
 
-		const userBelongToChat = await chatsCollection.findOne({ chatId, participantsId: { $in: [userId] } });
+		const userBelongToChat = await chatsCollection.findOne({ chatId }, {
+			participants: { $elemMatch: { id: userId } },
+		});
 
 		if (!userBelongToChat) return res.status(400).send('User does not belong to chat');
 
