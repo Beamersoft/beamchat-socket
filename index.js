@@ -67,7 +67,7 @@ app.get('/', (req, res) => {
 	res.sendFile(join(__dirname, 'index.html'));
 });
 
-app.get('/chat/all', authenticateToken, async (req, res) => {
+app.get('/chats/all', authenticateToken, async (req, res) => {
 	try {
 		const userJwt = getUserDataFromToken(req);
 
@@ -79,7 +79,7 @@ app.get('/chat/all', authenticateToken, async (req, res) => {
 		if (!user) return res.status(400).send('No user data supplied');
 
 		const chats = await chatsCollection.find({
-			participants: { $elemMatch: { id: user._id } }, // Convert ObjectId to string
+			participants: { $elemMatch: { id: user._id, pubKey: { $ne: null } } },
 		}).toArray();
 
 		const participantIds = chats.reduce((acc, chat) => {
@@ -110,7 +110,7 @@ app.get('/chat/all', authenticateToken, async (req, res) => {
 	}
 });
 
-app.post('/chat', authenticateToken, async (req, res) => {
+app.post('/chats', authenticateToken, async (req, res) => {
 	try {
 		const userJwt = getUserDataFromToken(req);
 
@@ -168,7 +168,7 @@ app.post('/chat', authenticateToken, async (req, res) => {
 	}
 });
 
-app.post('/chat/join', authenticateToken, async (req, res) => {
+app.post('/chats/join', authenticateToken, async (req, res) => {
 	try {
 		const userJwt = getUserDataFromToken(req);
 
