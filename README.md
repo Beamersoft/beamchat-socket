@@ -41,5 +41,5 @@ npm install
 
     Be sure to have this project at the same directory level than **beamchat-backend** like:
 
-    - /projects/beamchat-backend
-    - /projects/beamchat-socket
+    - /your-projects-folder/beamchat-backend
+    - /your-projects-folder/beamchat-socket
